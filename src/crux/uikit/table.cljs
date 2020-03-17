@@ -70,9 +70,10 @@
                 [:i.fas.fa-sort.column-title__sort-icon
                  ;; sort table by column inc or dec order
                  {:on-click #(utils/column-sort table! column-key)}]]
-               (if (utils/column-select-input? @table! column-key)
-                 [column-filter-select table! column-key]
-                 [column-filter-input table! column-key])])
+               (when (utils/column-filters? @table! column-key)
+                 (if (utils/column-select-input? @table! column-key)
+                   [column-filter-select table! column-key]
+                   [column-filter-input table! column-key]))])
             columns))]))
 
 (defn body-rows
@@ -182,7 +183,7 @@
        [search-all table!]
        [actions table!]]
       [active-filters table!]
-      [live-mode table!]]
+      #_[live-mode table!]]
      [:div.table__main
       [no-data-message processed-rows]
       [:table.table

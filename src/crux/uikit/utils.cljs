@@ -87,6 +87,10 @@
   [table! column-key]
   (swap! table! update-in [:columns :filter-input] dissoc column-key))
 
+(defn column-filters?
+  [table column-key]
+  (get-in table [:columns :column-filters? column-key]))
+
 (defn column-select-input?
   [table column-key]
   (= :select (-> table :columns :column-filters column-key)))
