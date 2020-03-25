@@ -27,7 +27,7 @@
       (fn []
         (js/document.removeEventListener "mouseup" handler))
       :reagent-render
-      (fn []
+      (fn [component]
         [component @active? ref-toggle ref-box args])})))
 
 (defn process-string
