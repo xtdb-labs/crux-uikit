@@ -3,6 +3,46 @@
    [clojure.string :as s]
    [reagent.core :as r]))
 
+(def example-data
+  {;; user provided data
+   :columns [{:column-key :status
+              :column-name "Status"
+              :render-fn (fn [x] x)}
+             {:column-key :scale-id
+              :column-name "ScaleID"}
+             {:column-key :name
+              :column-name "Name"}
+             {:column-key :location
+              :column-name "Location"}
+             {:column-key :error
+              :column-name "Error"}]
+   :rows [{:id (random-uuid)
+           :status "something"
+           :scale-id "ASD"
+           :name "luch"
+           :location "London"
+           :error "Overload"}
+          {:id (random-uuid)
+           :status "something"
+           :scale-id "ASD"
+           :name "luch"
+           :location "London"
+           :error "Overload"}]
+   :loading? true
+   :filters {:input #{:scale-id :name}
+             :select #{:status :error}}
+   ;; utils
+   :utils {:filter-all "value"
+           :filter-columns {:status #{"a" "b"}
+                            :scale-id "id"}
+           :hidden {:status true
+                    :name false}
+           :pagination {:rows-per-page 34
+                        :current-page 3}
+           :sort {:status :asc
+                  ;; or :desc
+                  }}})
+
 (defn component-hide-show
   [component & [args]]
   (let [!ref-toggle (atom nil)
@@ -30,188 +70,206 @@
       (fn [component]
         [component @active? ref-toggle ref-box args])})))
 
+(defn process-row-value
+  "Calls render-fn on row value or identity if :render-fn
+  is not provided"
+  [table column-key row-value]
+  ((or (some->> (:columns table)
+                (filter #(= column-key (:column-key %)))
+                first
+                :render-fn) identity) row-value))
+
 (defn process-string
   [s]
   (some-> s
-          s/trim
           not-empty
+          s/trim
           s/lower-case
           (s/replace #"\s+" " ")))
 
 (defn reset-pagination
   [table]
-  (assoc-in table [:pagination :current-page] 0))
+  (assoc-in table [:utils :pagination :current-page] 0))
 
 (defn column-sort
-  [table! column-key]
-  (swap! table!
+  [table-atom column-key]
+  (swap! table-atom
          #(-> %
               reset-pagination
-              (update-in [:columns :sort]
-                         (fn [[curr-key order-bool]]
-                           (if (= curr-key column-key)
-                             [curr-key (not order-bool)]
-                             [column-key true]))))))
+              (update-in [:utils :sort]
+                         (fn [m]
+                           (let [curr-column-key (ffirst m)
+                                 curr-sort-val (first (vals m))]
+                             (if (= curr-column-key column-key)
+                               (update m column-key (fn [order]
+                                                      (if (= :asc order)
+                                                        :desc :asc)))
+                               {column-key :asc})))))))
+
+(defn column-sort-icon
+  [table column-key]
+  (let [sort (get-in table [:utils :sort])]
+    (case (get sort column-key)
+      :asc "fa-caret-up"
+      :desc "fa-caret-down"
+      "fa-caret-down")))
 
 (defn column-sort-value
   [table]
-  (-> table :columns :sort))
+  (-> table :utils :sort))
 
 (defn column-filter-value
   [table column-key]
-  (-> table :columns :filter-input column-key))
-
-(defn column-filter-values
-  [table]
-  (let [filter-input (->> (-> table :columns :filter-input)
-                          (mapv (fn [[k v]]
-                                  [k (process-string v)]))
-                          (remove (comp nil? second))
-                          (into {}))
-        select-input (->> (-> table :columns :filter-select)
-                          (mapv (fn [[[k _] v]]
-                                  [k v]))
-                          (reduce (fn [coll [k v]]
-                                    (update coll k (fnil conj #{}) v)) nil))]
-    (merge filter-input select-input)))
+  (-> table :utils :filter-columns column-key))
 
 (defn column-filter-on-change
-  [evt table! column-key]
-  (swap! table!
+  [evt table-atom column-key]
+  (swap! table-atom
          #(-> %
               reset-pagination
-              (assoc-in [:columns :filter-input column-key]
+              (assoc-in [:utils :filter-columns column-key]
                         (-> evt .-target .-value)))))
 
 (defn column-filter-reset
-  [table! column-key]
-  (swap! table! update-in [:columns :filter-input] dissoc column-key))
+  [table-atom column-key]
+  (swap! table-atom update-in [:utils :filter-columns] dissoc column-key))
 
-(defn column-filters?
+;; use case statement for this in UI
+(defn column-filter-type
   [table column-key]
-  (get-in table [:columns :column-filters? column-key]))
-
-(defn column-select-input?
-  [table column-key]
-  (= :select (-> table :columns :column-filters column-key)))
+  (let [input-filters (get-in table [:filters :input])
+        select-filters (get-in table [:filters :select])]
+    (cond
+      (get input-filters column-key) :input
+      (get select-filters column-key) :select
+      :else nil)))
 
 (defn column-select-filter-options
   [table column-key]
-  (->> (-> table :rows :data)
-       (mapv (fn [[id row]]
-               [id
-                (get (into {} row) column-key)]))
-       ;; filtering out equal vals but still
-       ;; needing an id per value
-       (group-by second)
-       (mapv (fn [[value [[id _]]]]
-               [id value]))
+  (->> (:rows table)
+       ;; to return only relevant k-v pair from row
+       (mapv (fn [row]
+               [column-key
+                (process-row-value table
+                                   column-key
+                                   (get row column-key))]))
+       (group-by (juxt first second))
+       ;; to keep only [k v]
+       (map first)
+       ;; to sort them
        (sort-by second)))
 
 (defn column-select-filter-on-change
-  [table! value column-key id]
-  (swap! table!
-         (fn [table]
-           (let [curr-value (get-in table [:columns :filter-select
-                                           [column-key id]])]
-             (if curr-value
-               (-> table
-                   reset-pagination
-                   (update-in [:columns :filter-select] dissoc [column-key id]))
-               (-> table
-                   reset-pagination
-                   (assoc-in [:columns :filter-select [column-key id]] value)))))))
+  [table-atom column-key value]
+  (swap! table-atom
+         #(-> %
+              reset-pagination
+              (update-in [:utils :filter-columns column-key]
+                         (fn [selected-values]
+                           (if (get selected-values value)
+                             (disj selected-values value)
+                             (conj ((fnil conj #{}) selected-values) value)))))))
 
 (defn column-select-filter-value
-  [table column-key id]
-  (get (-> table :columns :filter-select) [column-key id] false))
+  [table column-key value]
+  (get-in table [:utils :filter-columns column-key value] false))
 
 (defn column-select-filter-reset
-  [table! column-key]
-  (swap! table! update-in [:columns :filter-select] dissoc column-key))
+  [table-atom column-key value]
+  (swap! table-atom update-in [:utils :filter-columns column-key] disj value))
 
 (defn column-filter-reset-all
-  [table!]
-  (swap! table!
-         (fn [table]
-           (-> table
-               reset-pagination
-               (update :columns dissoc :filter-select)
-               (update :columns dissoc :filter-input)))))
-
-(defn search-all-value
-  [table]
-  (-> table :head :search-all))
-
-(defn search-all-on-change
-  [evt table!]
-  (swap! table!
+  [table-atom]
+  (swap! table-atom
          #(-> %
               reset-pagination
-              (assoc-in [:head :search-all]
+              (update :utils dissoc :filter-columns))))
+
+(defn filter-all-value
+  [table]
+  (get-in table [:utils :filter-all] ""))
+
+(defn filter-all-on-change
+  [evt table-atom]
+  (swap! table-atom
+         #(-> %
+              reset-pagination
+              (assoc-in [:utils :filter-all]
                         (-> evt .-target .-value)))))
 
-(defn search-all-reset
-  [table!]
-  (swap! table!
+(defn filter-all-reset
+  [table-atom]
+  (swap! table-atom
          #(-> %
               reset-pagination
-              (update :head dissoc :search-all))))
-
+              (update :utils dissoc :filter-all))))
 
 (defn block-filter-values
+  "Collect only the active column filters for UI"
   [table]
-  (let [columns (-> table :columns)
-        remove-empty #(into {}
-                            (remove (comp empty? second) %))]
-    (merge
-     (remove-empty (:filter-input columns))
-     (remove-empty (:filter-select columns)))))
+  (->> (get-in table [:utils :filter-columns])
+       (remove (comp empty? second))
+       ;; from [:a "filter" :k #{"a" "b"}]
+       ;; to [[:a "filter"] [:k "a" :select] [:k "b" :select]]
+       (map (fn [[k v]]
+              (if (set? v)
+                (mapv #(vector k % :select) v)
+                (vector [k v]))))
+       (apply concat)
+       (not-empty)))
 
 (defn column-visible?
   [table column-key]
-  (not (-> table :columns :hidden column-key)))
+  (not (-> table :utils :hidden column-key)))
 
 (defn column-visibility-on-change
-  [table! column-key]
-  (swap! table! #(-> %
-                     reset-pagination
-                     (update-in [:columns :filter-select]
-                                (fn [filters-select]
-                                  (into {}
-                                        (remove (fn [[[k _] _]]
-                                                  (= column-key k))
-                                                filters-select))))
-                     (update-in [:columns :filter-input] dissoc column-key)
-                     (update-in [:columns :hidden column-key] not))))
+  [table-atom column-key]
+  (swap! table-atom
+         #(-> %
+              reset-pagination
+              (update-in [:utils :filter-columns] dissoc column-key)
+              (update-in [:utils :hidden column-key] not))))
+
+(defn- hidden-columns
+  "Transform hidden column keys from map to vec"
+  [table]
+  (->> (-> table :utils :hidden)
+       (filter second)
+       (map first)
+       (not-empty)))
 
 (defn table-columns
   [table]
-  (let [columns (-> table :columns :data)
-        hidden (-> table :columns :hidden)]
-    (remove #(get hidden (first %)) columns)))
+  (let [columns (:columns table)
+        hidden (-> table :utils :hidden)]
+    (remove #(get hidden (:column-key %)) columns)))
+
+(defn loading?
+  [table]
+  (get-in table [:utils :loading?]))
 
 (defn pagination-rows-per-page-on-change
-  [evt table!]
-  (swap! table!
+  [evt table-atom]
+  (swap! table-atom
          #(-> %
-              (assoc-in [:pagination :rows-per-page]
+              (assoc-in [:utils :pagination :rows-per-page]
                         (js/parseInt (-> evt .-target .-value)))
-              (assoc-in [:pagination :current-page] 0))))
+              (assoc-in [:utils :pagination :current-page] 0))))
 
 (defn pagination-rows-per-page
   [table]
-  (or (-> table :pagination :rows-per-page) 15))
+  (get-in table [:utils :pagination :rows-per-page] 15))
 
 (defn pagination-current-page
   [table]
-  (or (-> table :pagination :current-page) 0))
+  (get-in table [:utils :pagination :current-page] 0))
 
 (defn pagination-current-and-total-pages
   [table processed-rows]
   (let [offset (pagination-current-page table)
         rows-per-page (pagination-rows-per-page table)
-        nth-rows-at-page (+ rows-per-page (* offset rows-per-page))
+        nth-rows-at-page (+ rows-per-page
+                            (* offset rows-per-page))
         nth-rows (count processed-rows)]
     (str (inc (* offset rows-per-page))
          "-"
@@ -232,109 +290,98 @@
     (or (zero? left-rows) (neg? left-rows))))
 
 (defn pagination-inc-page
-  [table! processed-rows]
-  (when-not (pagination-rows-exhausted? @table! processed-rows)
-    (swap! table! update-in [:pagination :current-page]
+  [table-atom processed-rows]
+  (when-not (pagination-rows-exhausted? @table-atom
+                                        processed-rows)
+    (swap! table-atom update-in [:utils :pagination :current-page]
            (fnil inc 0))))
 
 (defn pagination-dec-page
-  [table!]
-  (when (> (pagination-current-page @table!) 0)
-    (swap! table! update-in [:pagination :current-page]
+  [table-atom]
+  (when (> (pagination-current-page @table-atom) 0)
+    (swap! table-atom update-in [:utils :pagination :current-page]
            dec)))
 
-(defn live-mode?
-  [table]
-  (-> table :live :live-mode))
+(defn date?
+  [d]
+  (instance? js/Date d))
 
-(defn live-notifications
-  [table]
-  (let [n (-> table :live :notifications)]
-    (if (> n 99)
-      "99+"
-      n)))
+(defn date-as-sortable
+  [d]
+  (.getTime d))
 
-(defn live-mode-on
-  [table!]
-  (swap! table! #(-> %
-                     reset-pagination
-                     (update :live dissoc :notifications)
-                     (update-in [:live :live-mode] not)
-                     ;; clear all searches, filters
-                     (update :columns dissoc :hidden)
-                     (update :columns dissoc :sort)
-                     (update :columns dissoc :filter-select)
-                     (update :columns dissoc :filter-input)
-                     (update :head dissoc :search-all))))
+(defn compare-vals
+  [x y]
+  (if (and (date? x) (date? y))
+    (compare (date-as-sortable x) (date-as-sortable y))
+    (compare x y)))
 
 (defn resolve-sorting
   [table rows]
-  (if-let [[column-key order] (column-sort-value table)]
-    (sort
-     (fn [row1 row2]
-       (let [find-val #(get (into {} (second %))
-                            column-key)
-             val1 (find-val row1)
-             val2 (find-val row2)]
-         ;; TODO - this can do something smarter
-         ;; for example with dates or other types
-         ;; maybe allow user to provide custom fns in :columns
-         (if order
-           (compare val2 val1)
-           (compare val1 val2))))
-     rows)
-    ;; with no sorting return rows input
+  (if-let [m (column-sort-value table)]
+    (let [column-key (ffirst m)
+          order (get m column-key)]
+      (sort
+       (fn [row1 row2]
+         (let [val1 (column-key row1)
+               val2 (column-key row2)]
+
+           (if (= :asc order)
+             (compare-vals val2 val1)
+             (compare-vals val1 val2))))
+       rows))
     rows))
+
+(defn column-filters
+  [table]
+  (->> (get-in table [:utils :filter-columns])
+       (remove (fn [k-v] (empty? (second k-v))))
+       (map (fn [[k v]] [k (if (string? v)
+                             (process-string v)
+                             v)]))
+       (not-empty)))
 
 (defn resolve-column-filtering
   [table rows]
-  (if-let [column-filters (column-filter-values table)]
+  (if-let [column-filters (column-filters table)]
     (filter
-     (fn [[_ row-data]]
-       (let [row-data-map (into {} row-data)]
-         (every?
-          (fn [[k v]]
-            (let [row-v (s/lower-case (get row-data-map k))]
-              (if (string? v)
-                (s/includes? row-v v)
-                ;; to filter when we have a select tag.
-                ;; the v values are in a set
-                (get v row-v))))
-          column-filters))) rows)
+     (fn [row]
+       (every?
+        (fn [[k v]]
+          (let [row-v (process-row-value table
+                                         k
+                                         (get row k))]
+            (if (string? v)
+              (s/includes? (s/lower-case row-v) v)
+              ;; to filter when we have a select tag.
+              ;; the v values are in a set
+              (get v row-v))))
+        column-filters))
+     rows)
     rows))
 
-(defn resolve-search-all
+(defn resolve-filter-all
   [table rows]
-  (if-let [search-value (process-string (search-all-value table))]
+  (if-let [filter-value (process-string
+                         (filter-all-value table))]
     (filter
-     (fn [[_ row-data]]
-       (let [row-data-vals (map second row-data)]
-         (some
-          (fn [cell-data]
-            (s/includes? (s/lower-case cell-data) search-value))
-          row-data-vals))) rows)
+     (fn [row]
+       (some
+        (fn [[k value]]
+          (s/includes?
+           (s/lower-case
+            (process-row-value table k value))
+           filter-value))
+        (dissoc row :id)))
+     rows)
     rows))
 
 (defn resolve-hidden-columns
   [table rows]
-  (if-let [hidden-columns (not-empty (->> (-> table :columns :hidden)
-                                          (filter second)
-                                          (map first)
-                                          (into #{})))]
+  (if-let [columns-to-hide (hidden-columns table)]
     (map
-     (fn [[id row-data opts]]
-       [id (remove
-            #(get hidden-columns (first %))
-            row-data) opts])
-     rows)
-    rows))
-
-(defn resolve-live-data
-  [table rows]
-  (if-let [live-mode (-> table :live :live-mode)]
-    (filter
-     (fn [[_ _ {:keys [live-data?]}]]
-       live-data?)
+     (fn [row]
+       (apply dissoc row columns-to-hide))
      rows)
     rows))
 
@@ -348,13 +395,17 @@
 
 (defn process-rows
   [table]
-  ;; all data transformation is performed here, on READ!
-  ;; swap! is not allowed in this function
-  (let [rows (-> table :rows :data)]
+  (let [rows (-> table :rows)]
     (->> rows
-         (resolve-live-data table)
          (resolve-hidden-columns table)
          (resolve-sorting table)
          (resolve-column-filtering table)
-         (resolve-search-all table)
+         (resolve-filter-all table)
          (resolve-pagination table))))
+
+(defn table-atom-mount
+  [table-atom]
+  (swap! table-atom
+         #(-> %
+              (assoc-in [:utils :loading?]
+                        (:loading? %)))))
