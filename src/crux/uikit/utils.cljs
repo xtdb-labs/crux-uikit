@@ -7,8 +7,13 @@
   {;; user provided data
    :columns [{:column-key :status
               :column-name "Status"
-              :is-component true
-              :class "align-center"}
+              :class "test"
+              ;; used only to render. Never read from this key
+              :component-fn (fn [x] [:i.fas.center
+                                     {:class (case x
+                                               "Warning" "fa-exclamation-circle"
+                                               "OK" "fa-check-circle"
+                                               "fa-stop-circle")}])}
              {:column-key :scale-id
               :column-name "ScaleID"
               :render-fn (fn [x] x)}
@@ -38,6 +43,7 @@
                    :navigation :dark
                    :rows :dark
                    :top :dark}
+           :toggle-all-themes true
            :loading? true
            :filter-all "value"
            :filter-columns {:status #{"a" "b"}

@@ -64,11 +64,12 @@
      {:class (when dark "table__head--dark")}
      (into [:tr]
            (map
-            (fn [{:keys [column-key column-name]}]
+            (fn [{:keys [column-key column-name class]}]
               ^{:key column-key}
               [:th.table__cell.head__cell
                [:div.head__column-title
-                {:on-click #(utils/column-sort table-atom column-key)}
+                {:class class
+                 :on-click #(utils/column-sort table-atom column-key)}
                 [:span column-name]
                 [:i.fas.column-title__sort-icon
                  ;; sort table by column inc or dec order
@@ -109,11 +110,13 @@
        (for [row rows]
          ^{:key (:id row)}
          [:tr.table__row.body__row
-          (for [{:keys [column-key render-fn]
+          (for [{:keys [column-key render-fn component-fn]
                  :or {render-fn identity}} columns]
             ^{:key (str (:id row) column-key)}
             [:td.table__cell.body__cell
-             (render-fn (column-key row))])])]
+             (if component-fn
+               (component-fn (column-key row))
+               (render-fn (column-key row)))])])]
       [:tbody.table__body.table__no-data
        [:tr [:td.td__no-data
              "No Match Found"]]])))
