@@ -7,9 +7,11 @@
   {;; user provided data
    :columns [{:column-key :status
               :column-name "Status"
-              :render-fn (fn [x] x)}
+              :is-component true
+              :class "align-center"}
              {:column-key :scale-id
-              :column-name "ScaleID"}
+              :column-name "ScaleID"
+              :render-fn (fn [x] x)}
              {:column-key :name
               :column-name "Name"}
              {:column-key :location
@@ -17,7 +19,8 @@
              {:column-key :error
               :column-name "Error"}]
    :rows [{:id (random-uuid)
-           :status "something"
+           :status {:component [:i.fas.fa-profile]
+                    :value "profile"}
            :scale-id "ASD"
            :name "luch"
            :location "London"
@@ -28,11 +31,15 @@
            :name "luch"
            :location "London"
            :error "Overload"}]
-   :loading? true
    :filters {:input #{:scale-id :name}
              :select #{:status :error}}
    ;; utils
-   :utils {:filter-all "value"
+   :utils {:theme {:columns :dark
+                   :navigation :dark
+                   :rows :dark
+                   :top :dark}
+           :loading? true
+           :filter-all "value"
            :filter-columns {:status #{"a" "b"}
                             :scale-id "id"}
            :hidden {:status true
@@ -86,6 +93,37 @@
           s/trim
           s/lower-case
           (s/replace #"\s+" " ")))
+
+(defn dark-mode?
+  [table k]
+  (= :dark (get-in table [:utils :theme k])))
+
+(defn set-dark-mode
+  [table-atom k]
+  (swap! table-atom update-in [:utils :theme k]
+         (fn [mode]
+           (if (= :dark mode)
+             :light
+             :dark))))
+
+(defn dark-mode-toggled-all?
+  [table]
+  (get-in table [:utils :toggle-all-themes]))
+
+(defn set-dark-mode-all
+  [table-atom]
+  (swap! table-atom
+         #(-> %
+              (assoc-in [:utils :theme]
+                        (let [m (fn [v]
+                                  {:top v
+                                   :columns v
+                                   :rows v
+                                   :navigation v})]
+                          (if (-> % :utils :toggle-all-themes)
+                            (m :light)
+                            (m :dark))))
+              (update-in [:utils :toggle-all-themes] not))))
 
 (defn reset-pagination
   [table]
@@ -402,10 +440,3 @@
          (resolve-column-filtering table)
          (resolve-filter-all table)
          (resolve-pagination table))))
-
-(defn table-atom-mount
-  [table-atom]
-  (swap! table-atom
-         #(-> %
-              (assoc-in [:utils :loading?]
-                        (:loading? %)))))
