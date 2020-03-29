@@ -6,17 +6,11 @@
 (def example-data
   {;; user provided data
    :columns [{:column-key :status
-              :column-name "Status"
-              :class "test"
-              ;; used only to render. Never read from this key
-              :component-fn (fn [x] [:i.fas.center
-                                     {:class (case x
-                                               "Warning" "fa-exclamation-circle"
-                                               "OK" "fa-check-circle"
-                                               "fa-stop-circle")}])}
+              :column-name "Status"}
              {:column-key :scale-id
               :column-name "ScaleID"
-              :render-fn (fn [x] x)}
+              :render-fn (fn [row k v])
+              :render-deny #{:filter :sort :custom-one?}}
              {:column-key :name
               :column-name "Name"}
              {:column-key :location
@@ -24,8 +18,7 @@
              {:column-key :error
               :column-name "Error"}]
    :rows [{:id (random-uuid)
-           :status {:component [:i.fas.fa-profile]
-                    :value "profile"}
+           :status "ok"
            :scale-id "ASD"
            :name "luch"
            :location "London"
@@ -82,15 +75,6 @@
       :reagent-render
       (fn [component]
         [component @active? ref-toggle ref-box args])})))
-
-(defn process-row-value
-  "Calls render-fn on row value or identity if :render-fn
-  is not provided"
-  [table column-key row-value]
-  ((or (some->> (:columns table)
-                (filter #(= column-key (:column-key %)))
-                first
-                :render-fn) identity) row-value))
 
 (defn process-string
   [s]
@@ -188,39 +172,59 @@
       (get select-filters column-key) :select
       :else nil)))
 
+(defn render-fn
+  [table column-key]
+  (some->> (:columns table)
+           (filter #(= column-key (:column-key %)))
+           first
+           :render-fn))
+
+(defn process-cell-value
+  ([table row column-key value]
+   (process-cell-value table row column-key value true))
+  ([table row column-key value allow?]
+   (let [render-fn (render-fn table column-key)]
+     (if (and allow? render-fn)
+       (render-fn row column-key value)
+       value))))
+
 (defn column-select-filter-options
   [table column-key]
-  (->> (:rows table)
-       ;; to return only relevant k-v pair from row
-       (mapv (fn [row]
-               [column-key
-                (process-row-value table
-                                   column-key
-                                   (get row column-key))]))
-       (group-by (juxt first second))
-       ;; to keep only [k v]
-       (map first)
-       ;; to sort them
-       (sort-by second)))
+  (let [processed-val #(process-cell-value table % column-key (column-key %))]
+    (->> (:rows table)
+         ;; to return only relevant k-v pair from row
+         (mapv (fn [row]
+                 [column-key (column-key row) (processed-val row)]))
+         (group-by (juxt first second last))
+         ;; to keep only [k raw-v processed-v]
+         (map first))))
 
 (defn column-select-filter-on-change
-  [table-atom column-key value]
+  [table-atom column-key value processed-value]
   (swap! table-atom
          #(-> %
               reset-pagination
               (update-in [:utils :filter-columns column-key]
                          (fn [selected-values]
-                           (if (get selected-values value)
-                             (disj selected-values value)
-                             (conj ((fnil conj #{}) selected-values) value)))))))
+                           (let [val&processed [value processed-value]]
+                             (if (get selected-values val&processed)
+                               (disj selected-values val&processed)
+                               (conj ((fnil conj #{}) selected-values)
+                                     val&processed))))))))
 
 (defn column-select-filter-value
-  [table column-key value]
-  (get-in table [:utils :filter-columns column-key value] false))
+  [table column-key value processed-value]
+  (get-in table [:utils :filter-columns column-key [value processed-value] 0] false))
 
 (defn column-select-filter-reset
   [table-atom column-key value]
-  (swap! table-atom update-in [:utils :filter-columns column-key] disj value))
+  (swap! table-atom update-in [:utils :filter-columns column-key]
+         (fn [column-filters]
+           (->> column-filters
+                (remove (fn [v]
+                          (and (vector? v)
+                               (= (first v) value))))
+                (into #{})))))
 
 (defn column-filter-reset-all
   [table-atom]
@@ -346,6 +350,13 @@
     (swap! table-atom update-in [:utils :pagination :current-page]
            dec)))
 
+(defn render-fn-allow?
+  [table column-key operation]
+  (let [column-map (first (filter #(= column-key (:column-key %))
+                                  (:columns table)))
+        deny? (-> column-map :render-deny operation)]
+    (not deny?)))
+
 (defn date?
   [d]
   (instance? js/Date d))
@@ -356,19 +367,32 @@
 
 (defn compare-vals
   [x y]
-  (if (and (date? x) (date? y))
+  (cond
+    (or (and (number? x) (number? y))
+        (and (string? x) (string? y))
+        (and (boolean? x) (boolean? y)))
+    (compare x y)
+
+    (and (date? x) (date? y))
     (compare (date-as-sortable x) (date-as-sortable y))
-    (compare x y)))
+
+    :else
+    (compare (str x) (str y))))
 
 (defn resolve-sorting
   [table rows]
   (if-let [m (column-sort-value table)]
     (let [column-key (ffirst m)
-          order (get m column-key)]
+          order (get m column-key)
+          allow-sort? (render-fn-allow? table column-key :sort)
+          processed-val (fn [row]
+                          (process-cell-value table row column-key
+                                              (column-key row)
+                                              allow-sort?))]
       (sort
        (fn [row1 row2]
-         (let [val1 (column-key row1)
-               val2 (column-key row2)]
+         (let [val1 (processed-val row1)
+               val2 (processed-val row2)]
 
            (if (= :asc order)
              (compare-vals val2 val1)
@@ -391,15 +415,19 @@
     (filter
      (fn [row]
        (every?
-        (fn [[k v]]
-          (let [row-v (process-row-value table
-                                         k
-                                         (get row k))]
-            (if (string? v)
-              (s/includes? (s/lower-case row-v) v)
-              ;; to filter when we have a select tag.
-              ;; the v values are in a set
-              (get v row-v))))
+        (fn [[column-key filtering]]
+          (let [allow-filter? (render-fn-allow? table column-key :filter)
+                processed-val (str (process-cell-value table row column-key
+                                                       (column-key row)
+                                                       allow-filter?))]
+            (if (string? filtering)
+              (s/includes? (s/lower-case processed-val) filtering)
+              (get (->> filtering
+                        (map
+                         (comp
+                          str (if allow-filter? second first)))
+                        (into #{}))
+                   processed-val))))
         column-filters))
      rows)
     rows))
@@ -411,11 +439,14 @@
     (filter
      (fn [row]
        (some
-        (fn [[k value]]
-          (s/includes?
-           (s/lower-case
-            (process-row-value table k value))
-           filter-value))
+        (fn [[column-key cell-value]]
+          (let [allow-filter? (render-fn-allow? table column-key :filter)
+                processed-val (str (process-cell-value table row column-key
+                                                       cell-value
+                                                       allow-filter?))]
+            (s/includes?
+             (s/lower-case processed-val)
+             filter-value)))
         (dissoc row :id)))
      rows)
     rows))

@@ -30,17 +30,16 @@
          {:class (when active? "column__button-options--show")
           :ref ref-box}]
         (map
-         (fn [[id value]]
+         (fn [[id value processed-value]]
            ^{:key (str id value)}
            [:div.action__checkbox
-            {:on-click #(utils/column-select-filter-on-change table-atom column-key value)}
-            [:input.checkbox__input
+            {:on-click #(utils/column-select-filter-on-change table-atom column-key value processed-value)}
+            [:input
              {:type "checkbox"
-              :checked (utils/column-select-filter-value @table-atom column-key value)
+              :checked (utils/column-select-filter-value @table-atom column-key value processed-value)
               :value value
               :on-change #()}]
-            [:label.checkbox__custom
-             value]])
+            [:label processed-value]])
          (utils/column-select-filter-options @table-atom column-key)))])]])
 
 (defn column-filter-input
@@ -64,12 +63,11 @@
      {:class (when dark "table__head--dark")}
      (into [:tr]
            (map
-            (fn [{:keys [column-key column-name class]}]
+            (fn [{:keys [column-key column-name]}]
               ^{:key column-key}
               [:th.table__cell.head__cell
                [:div.head__column-title
-                {:class class
-                 :on-click #(utils/column-sort table-atom column-key)}
+                {:on-click #(utils/column-sort table-atom column-key)}
                 [:span column-name]
                 [:i.fas.column-title__sort-icon
                  ;; sort table by column inc or dec order
@@ -110,13 +108,12 @@
        (for [row rows]
          ^{:key (:id row)}
          [:tr.table__row.body__row
-          (for [{:keys [column-key render-fn component-fn]
-                 :or {render-fn identity}} columns]
+          (for [{:keys [column-key render-fn]} columns]
             ^{:key (str (:id row) column-key)}
             [:td.table__cell.body__cell
-             (if component-fn
-               (component-fn (column-key row))
-               (render-fn (column-key row)))])])]
+             (if render-fn
+               (render-fn row column-key (column-key row))
+               (column-key row))])])]
       [:tbody.table__body.table__no-data
        [:tr [:td.td__no-data
              "No Match Found"]]])))
@@ -137,29 +134,6 @@
 (defn actions
   [table-atom]
   [:div.top__actions
-   [utils/component-hide-show
-    (fn [active? ref-toggle ref-box]
-      [:div.action
-       [:i.action__icon.fas.fa-th-large
-        {:ref ref-toggle}]
-       (into
-        [:div.action__options
-         {:class (when active? "action__options--show")
-          :ref ref-box}
-         [:div.action__title
-          "Show Columns"]]
-        (map
-         (fn [{:keys [column-key column-name]}]
-           ^{:key column-key}
-           [:div.action__checkbox
-            {:on-click #(utils/column-visibility-on-change table-atom column-key)}
-            [:input.checkbox__input
-             {:type "checkbox"
-              :checked (utils/column-visible? @table-atom column-key)
-              :on-change #()}]
-            [:label.checkbox__custom
-             column-name]])
-         (-> @table-atom :columns)))])]
    [utils/component-hide-show
     (fn [active? ref-toggle ref-box]
       [:div.action
@@ -196,7 +170,37 @@
              {:for k}
              [:span.onoffswitch-inner]
              [:span.onoffswitch-switch]]]
-           [:label s]]))])]])
+           [:label s]]))])]
+   [utils/component-hide-show
+    (fn [active? ref-toggle ref-box]
+      [:div.action
+       [:i.action__icon.fas.fa-th-large
+        {:ref ref-toggle}]
+       (into
+        [:div.action__options
+         {:class (when active? "action__options--show")
+          :ref ref-box}
+         [:div.action__title
+          "Show Columns"]]
+        (map
+         (fn [{:keys [column-key column-name]}]
+           ^{:key column-key}
+           [:div.action__checkbox.switch__group
+            {:on-click #(utils/column-visibility-on-change table-atom column-key)}
+            [:div.onoffswitch
+            [:input
+             {:name "onoffswitch"
+              :class "onoffswitch-checkbox"
+              :id column-key
+              :checked (utils/column-visible? @table-atom column-key)
+              :on-change #(utils/column-visibility-on-change table-atom column-key)
+              :type "checkbox"}]
+             [:label.onoffswitch-label
+              {:for column-key}
+             [:span.onoffswitch-inner]
+             [:span.onoffswitch-switch]]]
+            [:label column-name]])
+         (-> @table-atom :columns)))])]])
 
 (defn active-filters
   [table-atom]
@@ -211,9 +215,9 @@
         [:button.button.button__active-filters
          {:on-click
           (if select
-            #(utils/column-select-filter-reset table-atom column-key value)
+            #(utils/column-select-filter-reset table-atom column-key (first value))
             #(utils/column-filter-reset table-atom column-key))}
-         [:span value]
+         [:span (if select (second value) value)]
          [:i.fas.fa-times-circle]])])])
 
 (defn pagination
@@ -253,7 +257,7 @@
         top-dark (utils/dark-mode? @table-atom :top)
         rows-dark (utils/dark-mode? @table-atom :rows)]
     [:div.table__wrapper
-     [pprint-state (dissoc @table-atom :rows)]
+     #_[pprint-state (dissoc @table-atom :rows)]
      [:div.table__top
       {:class (when top-dark "table__top--dark")}
       [:div.top__first-group
