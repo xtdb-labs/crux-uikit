@@ -37,7 +37,6 @@
                    :rows :dark
                    :top :dark}
            :toggle-all-themes true
-           :loading? true
            :filter-all "value"
            :filter-columns {:status #{"a" "b"}
                             :scale-id "id"}
@@ -138,8 +137,8 @@
   [table column-key]
   (let [sort (get-in table [:utils :sort])]
     (case (get sort column-key)
-      :asc "fa-caret-up"
-      :desc "fa-caret-down"
+      :asc "fa-caret-down"
+      :desc "fa-caret-up"
       "fa-caret-down")))
 
 (defn column-sort-value
@@ -294,7 +293,7 @@
 
 (defn loading?
   [table]
-  (get-in table [:utils :loading?]))
+  (empty? (:rows table)))
 
 (defn pagination-rows-per-page-on-change
   [evt table-atom]
@@ -394,7 +393,7 @@
          (let [val1 (processed-val row1)
                val2 (processed-val row2)]
 
-           (if (= :asc order)
+           (if (= :desc order)
              (compare-vals val2 val1)
              (compare-vals val1 val2))))
        rows))

@@ -80,23 +80,27 @@
 
 (defn loading-table
   [table-atom {:keys [rows cols]}]
-  (let [dark (utils/dark-mode? @table-atom :rows)]
-    [:table.table
-     [:thead
-      {:class (when dark "thead-loading--dark")}
-      [:tr
-       (for [col (range cols)]
-         ^{:key col}
-         [:th [:span]])]]
-     [:tbody.table__body
-      {:class (when dark "table__body--dark")}
-      (for [row (range rows)]
-        ^{:key row}
-        [:tr.loading
-         (for [col (range cols)]
-           ^{:key col}
-           [:td.td-loading-bar
-            [:span.loading-bar__span]])])]]))
+  (let [dark (utils/dark-mode? @table-atom :rows)
+        columns (:columns @table-atom)]
+    [:div.table__main
+     [:table.table
+      (if columns
+        [header-columns table-atom]
+        [:thead
+         {:class (when dark "thead-loading--dark")}
+         [:tr
+          (for [col (range cols)]
+            ^{:key col}
+            [:th [:span]])]])
+      [:tbody.table__body
+       {:class (when dark "table__body--dark")}
+       (for [row (range rows)]
+         ^{:key row}
+         [:tr.loading
+          (for [col (range (or (count columns) cols))]
+            ^{:key col}
+            [:td.td-loading-bar
+             [:span.loading-bar__span]])])]]]))
 
 (defn body-rows
   [table-atom rows]
