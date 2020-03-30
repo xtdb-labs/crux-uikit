@@ -10,7 +10,7 @@
              {:column-key :scale-id
               :column-name "ScaleID"
               :render-fn (fn [row k v])
-              :render-deny #{:filter :sort :custom-one?}}
+              :render-only #{:filter :sort :custom-one?}}
              {:column-key :name
               :column-name "Name"}
              {:column-key :location
@@ -163,34 +163,34 @@
 
 ;; use case statement for this in UI
 (defn column-filter-type
-  [table column-key]
-  (let [input-filters (get-in table [:filters :input])
-        select-filters (get-in table [:filters :select])]
+  [data column-key]
+  (let [input-filters (get-in data [:filters :input])
+        select-filters (get-in data [:filters :select])]
     (cond
       (get input-filters column-key) :input
       (get select-filters column-key) :select
       :else nil)))
 
 (defn render-fn
-  [table column-key]
-  (some->> (:columns table)
+  [data column-key]
+  (some->> (:columns data)
            (filter #(= column-key (:column-key %)))
            first
            :render-fn))
 
 (defn process-cell-value
-  ([table row column-key value]
-   (process-cell-value table row column-key value true))
-  ([table row column-key value allow?]
-   (let [render-fn (render-fn table column-key)]
+  ([data row column-key value]
+   (process-cell-value data row column-key value true))
+  ([data row column-key value allow?]
+   (let [render-fn (render-fn data column-key)]
      (if (and allow? render-fn)
        (render-fn row column-key value)
        value))))
 
 (defn column-select-filter-options
-  [table column-key]
-  (let [processed-val #(process-cell-value table % column-key (column-key %))]
-    (->> (:rows table)
+  [data column-key]
+  (let [processed-val #(process-cell-value data % column-key (column-key %))]
+    (->> (:rows data)
          ;; to return only relevant k-v pair from row
          (mapv (fn [row]
                  [column-key (column-key row) (processed-val row)]))
@@ -286,14 +286,14 @@
        (not-empty)))
 
 (defn table-columns
-  [table]
-  (let [columns (:columns table)
+  [data table]
+  (let [columns (:columns data)
         hidden (-> table :utils :hidden)]
     (remove #(get hidden (:column-key %)) columns)))
 
 (defn loading?
-  [table]
-  (empty? (:rows table)))
+  [data]
+  (empty? (:rows data)))
 
 (defn pagination-rows-per-page-on-change
   [evt table-atom]
@@ -350,10 +350,10 @@
            dec)))
 
 (defn render-fn-allow?
-  [table column-key operation]
+  [data column-key operation]
   (let [column-map (first (filter #(= column-key (:column-key %))
-                                  (:columns table)))
-        deny? (-> column-map :render-deny operation)]
+                                  (:columns data)))
+        deny? (-> column-map :render-only operation)]
     (not deny?)))
 
 (defn date?
@@ -379,13 +379,13 @@
     (compare (str x) (str y))))
 
 (defn resolve-sorting
-  [table rows]
+  [data table rows]
   (if-let [m (column-sort-value table)]
     (let [column-key (ffirst m)
           order (get m column-key)
-          allow-sort? (render-fn-allow? table column-key :sort)
+          allow-sort? (render-fn-allow? data column-key :sort)
           processed-val (fn [row]
-                          (process-cell-value table row column-key
+                          (process-cell-value data row column-key
                                               (column-key row)
                                               allow-sort?))]
       (sort
@@ -409,14 +409,14 @@
        (not-empty)))
 
 (defn resolve-column-filtering
-  [table rows]
+  [data table rows]
   (if-let [column-filters (column-filters table)]
     (filter
      (fn [row]
        (every?
         (fn [[column-key filtering]]
-          (let [allow-filter? (render-fn-allow? table column-key :filter)
-                processed-val (str (process-cell-value table row column-key
+          (let [allow-filter? (render-fn-allow? data column-key :filter)
+                processed-val (str (process-cell-value data row column-key
                                                        (column-key row)
                                                        allow-filter?))]
             (if (string? filtering)
@@ -432,15 +432,15 @@
     rows))
 
 (defn resolve-filter-all
-  [table rows]
+  [data table rows]
   (if-let [filter-value (process-string
                          (filter-all-value table))]
     (filter
      (fn [row]
        (some
         (fn [[column-key cell-value]]
-          (let [allow-filter? (render-fn-allow? table column-key :filter)
-                processed-val (str (process-cell-value table row column-key
+          (let [allow-filter? (render-fn-allow? data column-key :filter)
+                processed-val (str (process-cell-value data row column-key
                                                        cell-value
                                                        allow-filter?))]
             (s/includes?
@@ -468,11 +468,12 @@
                  current-page))]))
 
 (defn process-rows
-  [table]
-  (let [rows (-> table :rows)]
+  [data table]
+  (let [rows (:rows data)]
     (->> rows
+         ;; V
          (resolve-hidden-columns table)
-         (resolve-sorting table)
-         (resolve-column-filtering table)
-         (resolve-filter-all table)
+         (resolve-sorting data table)
+         (resolve-column-filtering data table)
+         (resolve-filter-all data table)
          (resolve-pagination table))))

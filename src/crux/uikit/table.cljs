@@ -15,7 +15,7 @@
    [:pre (pprint-str x)]])
 
 (defn column-filter-select
-  [table-atom column-key]
+  [data table-atom column-key]
   [:div.column__filter
    [utils/component-hide-show
     (fn [active? ref-toggle ref-box]
@@ -24,23 +24,21 @@
         {:ref ref-toggle}
         [:i.column__button-icon.fas.fa-filter]
         [:span "Select"]
-        [:i.column__button-icon.fas.fa-chevron-down]]
-       (into
+        [:i.column__button-icon.fas.fa-chevron-down]
         [:div.column__button-options
          {:class (when active? "column__button-options--show")
-          :ref ref-box}]
-        (map
-         (fn [[id value processed-value]]
-           ^{:key (str id value)}
-           [:div.action__checkbox
-            {:on-click #(utils/column-select-filter-on-change table-atom column-key value processed-value)}
-            [:input
-             {:type "checkbox"
-              :checked (utils/column-select-filter-value @table-atom column-key value processed-value)
-              :value value
-              :on-change #()}]
-            [:label processed-value]])
-         (utils/column-select-filter-options @table-atom column-key)))])]])
+          :ref ref-box}
+         (doall
+          (for [[id value processed-value] (utils/column-select-filter-options data column-key)]
+            ^{:key (str id value)}
+            [:div.action__checkbox
+             {:on-click #(utils/column-select-filter-on-change table-atom column-key value processed-value)}
+             [:input
+              {:type "checkbox"
+               :checked (utils/column-select-filter-value @table-atom column-key value processed-value)
+               :value value
+               :on-change #()}]
+             [:label processed-value]]))]]])]])
 
 (defn column-filter-input
   [table-atom column-key]
@@ -56,9 +54,9 @@
       [:i.fas.fa-times]])])
 
 (defn header-columns
-  [table-atom]
+  [data table-atom]
   (let [dark (utils/dark-mode? @table-atom :columns)
-        columns (utils/table-columns @table-atom)]
+        columns (utils/table-columns data @table-atom)]
     [:thead.table__head
      {:class (when dark "table__head--dark")}
      (into [:tr]
@@ -72,20 +70,20 @@
                 [:i.fas.column-title__sort-icon
                  ;; sort table by column inc or dec order
                  {:class (utils/column-sort-icon @table-atom column-key)}]]
-               (case (utils/column-filter-type @table-atom column-key)
+               (case (utils/column-filter-type data column-key)
                  :input [column-filter-input table-atom column-key]
-                 :select [column-filter-select table-atom column-key]
+                 :select [column-filter-select data table-atom column-key]
                  [:div.column__filter--disabled])])
             columns))]))
 
 (defn loading-table
-  [table-atom {:keys [rows cols]}]
+  [data table-atom {:keys [rows cols]}]
   (let [dark (utils/dark-mode? @table-atom :rows)
-        columns (:columns @table-atom)]
+        columns (:columns data)]
     [:div.table__main
      [:table.table
       (if columns
-        [header-columns table-atom]
+        [header-columns data table-atom]
         [:thead
          {:class (when dark "thead-loading--dark")}
          [:tr
@@ -103,8 +101,8 @@
              [:span.loading-bar__span]])])]]]))
 
 (defn body-rows
-  [table-atom rows]
-  (let [columns (utils/table-columns @table-atom)
+  [data table-atom rows]
+  (let [columns (utils/table-columns data @table-atom)
         dark (utils/dark-mode? @table-atom :rows)]
     (if (seq rows)
       [:tbody.table__body
@@ -256,23 +254,26 @@
           [:i.fas.fa-chevron-right]]]]]]]))
 
 (defn table
-  [table-atom]
-  (let [[processed-rows paginated-rows] (utils/process-rows @table-atom)
-        top-dark (utils/dark-mode? @table-atom :top)
-        rows-dark (utils/dark-mode? @table-atom :rows)]
-    [:div.table__wrapper
-     #_[pprint-state (dissoc @table-atom :rows)]
-     [:div.table__top
-      {:class (when top-dark "table__top--dark")}
-      [:div.top__first-group
-       [filter-all table-atom]
-       [actions table-atom]]
-      [active-filters table-atom]]
-     (if (utils/loading? @table-atom)
-       [loading-table table-atom {:rows 7 :cols 4}]
-       [:div.table__main
-        {:class (when rows-dark "table__main--dark")}
-        [:table.table
-         [header-columns table-atom]
-         [body-rows table-atom paginated-rows]]])
-     [pagination table-atom processed-rows]]))
+  [data]
+  (let [table-atom (r/atom {:utils (dissoc data :columns :rows :filters)})]
+    (fn [data]
+      (let [[processed-rows paginated-rows] (utils/process-rows data @table-atom)
+            top-dark (utils/dark-mode? @table-atom :top)
+            rows-dark (utils/dark-mode? @table-atom :rows)]
+        [:div]
+        [:div.table__wrapper
+         [pprint-state (dissoc @table-atom :rows)]
+         [:div.table__top
+          {:class (when top-dark "table__top--dark")}
+          [:div.top__first-group
+           [filter-all table-atom]
+           [actions table-atom]]
+          [active-filters table-atom]]
+         (if (utils/loading? data)
+           [loading-table data table-atom {:rows 7 :cols 4}]
+           [:div.table__main
+            {:class (when rows-dark "table__main--dark")}
+            [:table.table
+             [header-columns data table-atom]
+             [body-rows data table-atom paginated-rows]]])
+         [pagination table-atom processed-rows]]))))
