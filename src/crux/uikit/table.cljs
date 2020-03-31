@@ -16,29 +16,31 @@
 
 (defn column-filter-select
   [data table-atom column-key]
-  [:div.column__filter
-   [utils/component-hide-show
-    (fn [active? ref-toggle ref-box]
-      [:div.column__button-wrapper
-       [:button.button.column__button
-        {:ref ref-toggle}
-        [:i.column__button-icon.fas.fa-filter]
-        [:span "Select"]
-        [:i.column__button-icon.fas.fa-chevron-down]
-        [:div.column__button-options
-         {:class (when active? "column__button-options--show")
-          :ref ref-box}
-         (doall
-          (for [[id value processed-value] (utils/column-select-filter-options data column-key)]
-            ^{:key (str id value)}
-            [:div.action__checkbox
-             {:on-click #(utils/column-select-filter-on-change table-atom column-key value processed-value)}
-             [:input
-              {:type "checkbox"
-               :checked (utils/column-select-filter-value @table-atom column-key value processed-value)
-               :value value
-               :on-change #()}]
-             [:label processed-value]]))]]])]])
+  (let [normalized-value (-> data :filters :select-normalize column-key)]
+    [:div.column__filter
+     [utils/component-hide-show
+      (fn [active? ref-toggle ref-box]
+        [:div.column__button-wrapper
+         [:button.button.column__button
+          {:ref ref-toggle}
+          [:i.column__button-icon.fas.fa-filter]
+          [:span "Select"]
+          [:i.column__button-icon.fas.fa-chevron-down]
+          [:div.column__button-options
+           {:class (when active? "column__button-options--show")
+            :ref ref-box}
+           (doall
+            (for [[id value processed-value] (utils/column-select-filter-options data column-key)]
+              ^{:key (str id value)}
+              [:div.action__checkbox
+               {:on-click #(utils/column-select-filter-on-change table-atom column-key value processed-value)}
+               [:input
+                {:type "checkbox"
+                 :checked (utils/column-select-filter-value @table-atom column-key value processed-value)
+                 :value value
+                 :on-change #()}]
+               [:label (if normalized-value
+                         value processed-value)]]))]]])]]))
 
 (defn column-filter-input
   [table-atom column-key]
@@ -134,7 +136,7 @@
       [:i.fas.fa-times]])])
 
 (defn actions
-  [table-atom]
+  [data table-atom]
   [:div.top__actions
    [utils/component-hide-show
     (fn [active? ref-toggle ref-box]
@@ -202,10 +204,10 @@
              [:span.onoffswitch-inner]
              [:span.onoffswitch-switch]]]
             [:label column-name]])
-         (-> @table-atom :columns)))])]])
+         (:columns data)))])]])
 
 (defn active-filters
-  [table-atom]
+  [data table-atom]
   [:div.top__block-filters
    (when-let [filters (utils/block-filter-values @table-atom)]
      [:<>
@@ -213,14 +215,17 @@
        {:on-click #(utils/column-filter-reset-all table-atom)}
        "RESET"]
       (for [[column-key value select] filters]
-        ^{:key (str column-key value)}
-        [:button.button.button__active-filters
-         {:on-click
-          (if select
-            #(utils/column-select-filter-reset table-atom column-key (first value))
-            #(utils/column-filter-reset table-atom column-key))}
-         [:span (if select (second value) value)]
-         [:i.fas.fa-times-circle]])])])
+        (let [normalized-value (-> data :filters :select-normalize column-key)]
+          ^{:key (str column-key value)}
+          [:button.button.button__active-filters
+           {:on-click
+            (if select
+              #(utils/column-select-filter-reset table-atom column-key (first value))
+              #(utils/column-filter-reset table-atom column-key))}
+           [:span (if (and select (not normalized-value))
+                    (second value)
+                    (first value))]
+           [:i.fas.fa-times-circle]]))])])
 
 (defn pagination
   [table-atom processed-rows]
@@ -262,13 +267,13 @@
             rows-dark (utils/dark-mode? @table-atom :rows)]
         [:div]
         [:div.table__wrapper
-         [pprint-state (dissoc @table-atom :rows)]
+         #_[pprint-state (dissoc @table-atom :rows)]
          [:div.table__top
           {:class (when top-dark "table__top--dark")}
           [:div.top__first-group
            [filter-all table-atom]
-           [actions table-atom]]
-          [active-filters table-atom]]
+           [actions data table-atom]]
+          [active-filters data table-atom]]
          (if (utils/loading? data)
            [loading-table data table-atom {:rows 7 :cols 4}]
            [:div.table__main

@@ -31,6 +31,7 @@
            :error "Overload"}]
    :filters {:input #{:scale-id :name}
              :select #{:status :error}}
+   :filter-normalize #{:scale-id}
    ;; utils
    :utils {:theme {:columns :dark
                    :navigation :dark
