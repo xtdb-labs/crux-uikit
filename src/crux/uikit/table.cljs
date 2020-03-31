@@ -110,10 +110,10 @@
       [:tbody.table__body
        {:class (when dark "table__body--dark")}
        (for [row rows]
-         ^{:key (:id row)}
+         ^{:key (vals row)}
          [:tr.table__row.body__row
           (for [{:keys [column-key render-fn]} columns]
-            ^{:key (str (:id row) column-key)}
+            ^{:key (str (vals row) column-key)}
             [:td.table__cell.body__cell
              (if render-fn
                (render-fn row column-key (column-key row))
