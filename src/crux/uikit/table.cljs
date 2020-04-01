@@ -223,9 +223,10 @@
             (if select
               #(utils/column-select-filter-reset table-atom column-key (first value))
               #(utils/column-filter-reset table-atom column-key))}
-           [:span (if (and select (not normalized-value))
-                    (second value)
-                    (first value))]
+           [:span (cond
+                    (and select (not normalized-value)) (second value)
+                    select (first value)
+                    :else value)]
            [:i.fas.fa-times-circle]]))])])
 
 (defn pagination
