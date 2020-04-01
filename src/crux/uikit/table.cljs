@@ -116,7 +116,7 @@
             ^{:key (str (vals row) column-key)}
             [:td.table__cell.body__cell
              (if render-fn
-               (render-fn row column-key (column-key row))
+               (render-fn row (column-key row))
                (column-key row))])])]
       [:tbody.table__body.table__no-data
        [:tr [:td.td__no-data

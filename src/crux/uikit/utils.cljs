@@ -185,7 +185,7 @@
   ([data row column-key value allow?]
    (let [render-fn (render-fn data column-key)]
      (if (and allow? render-fn)
-       (render-fn row column-key value)
+       (render-fn row value)
        value))))
 
 (defn column-select-filter-options
