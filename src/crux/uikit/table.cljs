@@ -138,7 +138,8 @@
 (defn actions
   [data table-atom]
   [:div.top__actions
-   [utils/component-hide-show
+   ;; hide togglable dark theme
+   #_[utils/component-hide-show
     (fn [active? ref-toggle ref-box]
       [:div.action
        [:i.action__icon.fas.fa-paint-brush
@@ -185,7 +186,7 @@
          {:class (when active? "action__options--show")
           :ref ref-box}
          [:div.action__title
-          "Show Columns"]]
+          "Columns"]]
         (map
          (fn [{:keys [column-key column-name]}]
            ^{:key column-key}
