@@ -30,8 +30,8 @@
            :location "London"
            :error "Overload"}]
    :filters {:input #{:scale-id :name}
-             :select #{:status :error}}
-   :filter-normalize #{:scale-id}
+             :select #{:status :error}
+             :select-normalize #{:status}}
    ;; utils
    :utils {:theme {:columns :dark
                    :navigation :dark
@@ -436,19 +436,20 @@
   [data table rows]
   (if-let [filter-value (process-string
                          (filter-all-value table))]
-    (filter
-     (fn [row]
-       (some
-        (fn [[column-key cell-value]]
-          (let [allow-filter? (render-fn-allow? data column-key :filter)
-                processed-val (str (process-cell-value data row column-key
-                                                       cell-value
-                                                       allow-filter?))]
-            (s/includes?
-             (s/lower-case processed-val)
-             filter-value)))
-        (dissoc row :id)))
-     rows)
+    (let [column-keys (map #(:column-key %) (data :columns))]
+      (filter
+       (fn [row]
+         (some
+          (fn [[column-key cell-value]]
+            (let [allow-filter? (render-fn-allow? data column-key :filter)
+                  processed-val (str (process-cell-value data row column-key
+                                                         cell-value
+                                                         allow-filter?))]
+              (s/includes?
+               (s/lower-case processed-val)
+               filter-value)))
+          (select-keys row column-keys)))
+       rows))
     rows))
 
 (defn resolve-hidden-columns
