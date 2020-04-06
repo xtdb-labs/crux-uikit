@@ -126,8 +126,7 @@
               reset-pagination
               (update-in [:utils :sort]
                          (fn [m]
-                           (let [curr-column-key (ffirst m)
-                                 curr-sort-val (first (vals m))]
+                           (let [curr-column-key (ffirst m)]
                              (if (= curr-column-key column-key)
                                (update m column-key (fn [order]
                                                       (if (= :asc order)
@@ -190,14 +189,18 @@
 
 (defn column-select-filter-options
   [data column-key]
-  (let [processed-val #(process-cell-value data % column-key (column-key %))]
-    (->> (:rows data)
-         ;; to return only relevant k-v pair from row
-         (mapv (fn [row]
-                 [column-key (column-key row) (processed-val row)]))
-         (group-by (juxt first second last))
-         ;; to keep only [k raw-v processed-v]
-         (map first))))
+  (let [processed-val #(process-cell-value data % column-key (column-key %))
+        options (->> (:rows data)
+                     ;; to return only relevant k-v pair from row
+                     (mapv (fn [row]
+                             [column-key (column-key row) (processed-val row)]))
+                     (group-by second)
+                     ;; to keep only [k raw-v processed-v]
+                     (map (fn [[_ [group]]]
+                            group))
+                     (sort second))]
+    options))
+
 
 (defn column-select-filter-on-change
   [table-atom column-key value processed-value]
